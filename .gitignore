@@ -2,7 +2,9 @@
 seed/seed.sql
 logs/
 *.tar.gz
+SevaSetuRemediationBrief.pdf
 *.mp3
+solution.md
 
 # Python & virtual environments
 __pycache__/
