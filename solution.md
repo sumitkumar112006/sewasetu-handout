@@ -67,11 +67,11 @@ There are two separate bugs in `app/app.py`:
 
 ## 2. Broken RTPS "Deemed Approval" Automation Engine
 
-### 1. Diagnosis & Evidence
+### 1. Diagnosis & Civic Evidence
 
 * **The Civic Problem:**
   Under the *Purvanchal Right to Public Services (RTPS) Act*, any pension application untouched for $>15$ days must automatically be marked `DEEMED_APPROVED`.
-  - In the live database right now, **4,874 senior citizens' applications** are stuck in `PENDING` past their 15-day statutory SLA deadline.
+  - In the live database right now, exactly **4,874 senior citizens' applications** are stuck in `PENDING` past their 15-day statutory SLA deadline.
   - Senior citizens are denied their monthly pension disbursements despite meeting all statutory criteria.
 
 * **The Exact Code Bug:**
@@ -119,7 +119,7 @@ Following the mandatory evaluation requirement (*failing test committed first, t
    ```bash
    git commit -m "fix(automation): restore RTPS deemed approval config path and statutory UI fallback (Issue 2)"
    ```
-7. **Document in `SOLUTION_PROOF.md` & `solution.md`** and push to GitHub.
+7. **Document in `SOLUTION_PROOF.txt` & `solution.md`** and push to GitHub.
 
 ---
 
