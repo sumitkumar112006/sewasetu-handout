@@ -4,8 +4,7 @@ logs/
 *.tar.gz
 SevaSetuRemediationBrief.pdf
 *.mp3
-solution.md
-
+SOLUTION_PROOF.md
 # Python & virtual environments
 __pycache__/
 *.py[cod]
