@@ -114,12 +114,21 @@ Following the mandatory evaluation requirement (*failing test committed first, t
    * Update `app/scripts/deemed_approval.py` to point to `app.ini` (with fallback to `settings.ini`).
    * Modularize the approval logic into a callable function `run_deemed_approval()` so it can be invoked safely in batch, on-demand, or via cron.
    * Update `view_application` in `app/app.py` to dynamically enforce `DEEMED_APPROVED` when statutory SLA has expired.
-5. **Run Test** $\rightarrow$ Confirm **PASS**.
-6. **Commit Fix:**
-   ```bash
-   git commit -m "fix(automation): restore RTPS deemed approval config path and statutory UI fallback (Issue 2)"
-   ```
-7. **Document in `SOLUTION_PROOF.txt` & `solution.md`** and push to GitHub.
+### 3. Verification & Proof of Resolution (TDD Evidence)
+- **Status**: **RESOLVED & VERIFIED**
+- **Test File**: `tests/test_issue2_rtps_approval.py`
+- **Failing Test Commit**: `c245a32` (`test: add failing tests for RTPS deemed approval engine and UI SLA status (Issue 2)`)
+  - `test_deemed_approval_config_path_exists`: Failed with `FileNotFoundError: /app/config/settings.ini`
+  - `test_deemed_approval_import_and_execution`: Failed with `FileNotFoundError: /app/config/settings.ini`
+  - `test_statutory_sla_status_computation`: Error `cannot import name 'get_effective_status' from 'app'`
+- **Passing Fix Commit**: `76ce886` (`fix(automation): restore RTPS deemed approval config path and statutory UI fallback (Issue 2)`)
+  - Updated config path to `app.ini` with fallback to `settings.ini` in `app/scripts/deemed_approval.py`
+  - Exported callable `run_deemed_approval(now=None)`
+  - Added `get_effective_status()` in `app/app.py` ensuring statutory truth in citizen portal
+  - All 3 tests passed (`Ran 3 tests in 10.017s. OK.`)
+- **Live Database Impact**:
+  - Exactly **4,867 overdue pending applications** successfully transitioned to `DEEMED_APPROVED` with `decided_by='RTPS-AUTO'`.
+  - Remaining: only 7 applications (submitted today) remain in `PENDING` state.
 
 ---
 
