@@ -17,8 +17,9 @@ from datetime import datetime, date, timedelta
 
 import requests
 import psycopg2
+# pyrefly: ignore[missing-import]
 from flask import (Flask, request, session, redirect, url_for, render_template,
-                   flash, send_file, abort, jsonify)
+                   flash, send_file, abort)
 from fpdf import FPDF
 
 try:
@@ -375,6 +376,26 @@ def status_login():
     return render_template("status_login.html")
 
 
+def get_effective_status(status, submitted_at, sla_days=SLA_DAYS):
+    """
+    Determine statutory status under the Purvanchal Right to Public Services (RTPS) Act.
+    If an application is PENDING past the statutory SLA period (15 days),
+    its legal status is automatically DEEMED_APPROVED.
+    """
+    if status == "PENDING" and submitted_at:
+        if isinstance(submitted_at, str):
+            try:
+                submitted_at = datetime.fromisoformat(submitted_at)
+            except Exception:
+                pass
+        try:
+            if (datetime.now() - submitted_at).days >= sla_days:
+                return "DEEMED_APPROVED"
+        except Exception:
+            pass
+    return status
+
+
 @app.route("/application/<int:app_id>")
 def view_application(app_id):
     if not session.get("logged_in"):
@@ -389,7 +410,12 @@ def view_application(app_id):
     cur.close(); conn.close()
     if not row:
         abort(404)
-    return render_template("application.html", a=row, app_id=app_id)
+    app_data = list(row)
+    effective_status = get_effective_status(app_data[8], app_data[9], SLA_DAYS)
+    app_data[8] = effective_status
+    if effective_status == "DEEMED_APPROVED" and not app_data[10] and app_data[9]:
+        app_data[10] = app_data[9] + timedelta(days=SLA_DAYS)
+    return render_template("application.html", a=app_data, app_id=app_id)
 
 
 @app.route("/ack/<int:app_id>.pdf")
