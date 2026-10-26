@@ -183,6 +183,22 @@ Immediately after applying, senior citizens receive unsolicited sales calls and 
 3. **Use Parameterized Queries:** Prevent SQL injection with `cur.execute("SELECT mobile FROM portal_users WHERE mobile = %s", (mobile,))`.
 4. **Externalize Hardcoded Secrets:** Move hardcoded credentials (`sewasetu@123`, `ssp-prod-key-2023-donotshare`) to environment variables.
 
+### 4. Verification & Proof of Resolution (TDD Evidence)
+- **Status**: **RESOLVED & VERIFIED**
+- **Test File**: `tests/test_issue3_security_access_control.py`
+- **Failing Test Commit**: `9a9423c` (`test: add failing tests for PII leakage, IDOR, and unauthorized admin actions (Issue 3)`)
+  - `test_unauthenticated_pdf_access_denied`: Failed (returned 200 with full PII and bank details instead of 403)
+  - `test_cross_user_application_view_denied`: Failed (returned 200 with another citizen's profile instead of 403)
+  - `test_unauthorized_citizen_cannot_approve_application`: Failed (non-admin citizen approved application with 302 instead of 403)
+  - `test_unauthorized_citizen_cannot_reject_application`: Failed (non-admin citizen rejected application with 302 instead of 403)
+- **Passing Fix Commit**: `82270b6` (`fix(security): resolve IDOR on PDFs and profiles, enforce admin authorization, parameterize reset query (Issue 3)`)
+  - Added strict ownership validation (`session['portal_mobile'] == row['mobile']`) and admin override on `/application/<id>`
+  - Enforced authentication and ownership on `/ack/<id>.pdf`
+  - Replaced `session.get('logged_in')` with `session.get('admin')` on `/admin/approve` and `/admin/reject`
+  - Parameterized SQL queries in `/status/reset` against SQL injection
+  - Externalized admin credentials to environment variables with fallback
+  - All 5 tests passed (`Ran 5 tests in 0.026s. OK.`)
+
 ---
 
 ## 4. Cyclical Pre-Disbursement Server Freeze (Denial of Service)
