@@ -1,0 +1,15 @@
+# Ignore large data archives as permitted in BRIEF.md
+seed/seed.sql
+logs/
+*.tar.gz
+*.mp3
+
+# Python & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
