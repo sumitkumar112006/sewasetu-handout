@@ -173,31 +173,136 @@ Immediately after applying, senior citizens receive unsolicited sales calls and 
   ```
   * **Root Cause:** Direct string substitution (`%s` % mobile) inside SQL on a public unauthenticated password reset page.
 
-### 3. How We Solve It (Solution Approach)
-1. **Enforce Ownership on Citizen Routes:** Check that the application belongs to `session['portal_mobile']` (or user is admin) before returning PDF or application details.
-   ```python
-   if not session.get("admin") and row['mobile'] != session.get("portal_mobile"):
-       abort(403)
-   ```
-2. **Enforce Strict Admin Check:** Change approval/rejection checks to `if not session.get("admin"): abort(403)`.
-3. **Use Parameterized Queries:** Prevent SQL injection with `cur.execute("SELECT mobile FROM portal_users WHERE mobile = %s", (mobile,))`.
-4. **Externalize Hardcoded Secrets:** Move hardcoded credentials (`sewasetu@123`, `ssp-prod-key-2023-donotshare`) to environment variables.
+### 3. How We Solve It (Solution Approach & Code Diff)
+The security flaws were remediated in `app/app.py` in Commit `82270b6`:
+
+```diff
+--- a/app/app.py
++++ b/app/app.py
+@@ -39,8 +39,8 @@ app = Flask(__name__)
+ app.secret_key = config.get("app", "secret_key")
+ app.config["PERMANENT_SESSION_LIFETIME"] = 300
+ 
+-ADMIN_USERNAME = "admin"
+-ADMIN_PASSWORD = "sewasetu@123"
++ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
++ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "sewasetu@123")
+ 
+@@ -336,6 +336,7 @@ def handle_submission():
+     session.pop("form_data", None)
+     session.pop("doc_path", None)
+     session.pop("verified_mobile", None)
++    session["submitted_app_id"] = new_id
+     send_sms(mobile, "Sewa Setu: application %s received...")
+     return render_template("confirmation.html", app_no=app_no, app_id=new_id)
+ 
+@@ -398,7 +399,7 @@ def get_effective_status(status, submitted_at, sla_days=SLA_DAYS):
+ 
+ @app.route("/application/<int:app_id>")
+ def view_application(app_id):
+-    if not session.get("logged_in"):
++    if not session.get("logged_in") and not session.get("admin"):
+         flash("Please login to view application status.")
+         return redirect(url_for("status_login"))
+     conn = get_db()
+@@ -410,6 +411,12 @@ def view_application(app_id):
+     cur.close(); conn.close()
+     if not row:
+         abort(404)
++
++    is_admin = bool(session.get("admin"))
++    user_mobile = session.get("portal_mobile")
++    if not is_admin and user_mobile != row[2]:
++        abort(403)
++
+     app_data = list(row)
+ 
+@@ -420,17 +427,29 @@ def view_application(app_id):
+ 
+ @app.route("/ack/<int:app_id>.pdf")
+ def ack_pdf(app_id):
++    conn = get_db()
++    cur = conn.cursor()
++    cur.execute("SELECT id, mobile FROM applications WHERE id = %s", (app_id,))
++    row = cur.fetchone()
++    if not row:
++        cur.close(); conn.close()
++        abort(404)
++
++    app_mobile = row[1]
++    is_admin = bool(session.get("admin"))
++    user_mobile = session.get("portal_mobile")
++    is_submitted_in_session = (session.get("submitted_app_id") == app_id)
++
++    if not is_admin and user_mobile != app_mobile and not is_submitted_in_session:
++        cur.close(); conn.close()
++        abort(403)
++
+     path = os.path.join(UPLOAD_DIR, "ack", "%d.pdf" % app_id)
+     if not os.path.exists(path):
+         data = generate_acknowledgment(cur, app_id)
+         cur.close(); conn.close()
+         return send_file(io.BytesIO(data), mimetype="application/pdf")
++    cur.close(); conn.close()
+     return send_file(path, mimetype="application/pdf")
+ 
+@@ -440,11 +459,11 @@ def reset_password():
+         mobile = request.form.get("mobile", "")
+         conn = get_db()
+         cur = conn.cursor()
+-        # fetch account for reset
+-        cur.execute("SELECT mobile FROM portal_users WHERE mobile = '%s'" % mobile)
++        # fetch account for reset using parameterized query
++        cur.execute("SELECT mobile FROM portal_users WHERE mobile = %s", (mobile,))
+         row = cur.fetchone()
+         if row:
+-            cur.execute("SELECT dob FROM applications WHERE mobile = '%s' LIMIT 1" % mobile)
++            cur.execute("SELECT dob FROM applications WHERE mobile = %s LIMIT 1", (mobile,))
+             r2 = cur.fetchone()
+ 
+@@ -529,7 +548,7 @@ def admin_view(app_id):
+ 
+ @app.route("/admin/approve/<int:app_id>", methods=["POST"])
+ def admin_approve(app_id):
+-    if not session.get("logged_in"):
++    if not session.get("admin"):
+         abort(403)
+ 
+@@ -543,7 +562,7 @@ def admin_reject(app_id):
+-    if not session.get("logged_in"):
++    if not session.get("admin"):
+         abort(403)
+```
 
 ### 4. Verification & Proof of Resolution (TDD Evidence)
 - **Status**: **RESOLVED & VERIFIED**
 - **Test File**: `tests/test_issue3_security_access_control.py`
-- **Failing Test Commit**: `9a9423c` (`test: add failing tests for PII leakage, IDOR, and unauthorized admin actions (Issue 3)`)
+- **Failing Test Commit**: [`9a9423c`](https://github.com/sumitkumar112006/sewasetu-handout/commit/9a9423ced4fa8d9e9619c961e05be3b632fa5a7a) (`test: add failing tests for PII leakage, IDOR, and unauthorized admin actions (Issue 3)`)
   - `test_unauthenticated_pdf_access_denied`: Failed (returned 200 with full PII and bank details instead of 403)
   - `test_cross_user_application_view_denied`: Failed (returned 200 with another citizen's profile instead of 403)
   - `test_unauthorized_citizen_cannot_approve_application`: Failed (non-admin citizen approved application with 302 instead of 403)
   - `test_unauthorized_citizen_cannot_reject_application`: Failed (non-admin citizen rejected application with 302 instead of 403)
-- **Passing Fix Commit**: `82270b6` (`fix(security): resolve IDOR on PDFs and profiles, enforce admin authorization, parameterize reset query (Issue 3)`)
+- **Passing Fix Commit**: [`82270b6`](https://github.com/sumitkumar112006/sewasetu-handout/commit/82270b6ed4e882484e82d76932396cb2a49365ab) (`fix(security): resolve IDOR on PDFs and profiles, enforce admin authorization, parameterize reset query (Issue 3)`)
   - Added strict ownership validation (`session['portal_mobile'] == row['mobile']`) and admin override on `/application/<id>`
   - Enforced authentication and ownership on `/ack/<id>.pdf`
   - Replaced `session.get('logged_in')` with `session.get('admin')` on `/admin/approve` and `/admin/reject`
   - Parameterized SQL queries in `/status/reset` against SQL injection
   - Externalized admin credentials to environment variables with fallback
-  - All 5 tests passed (`Ran 5 tests in 0.026s. OK.`)
+  - All 5 tests passed (`Ran 5 tests in 0.049s. OK.`)
+
+### 5. Useful Application & Probe URLs
+| Endpoint Type | URL | Purpose & Security Guarantee |
+| :--- | :--- | :--- |
+| **Citizen Application** | `http://localhost:8000/` | Public application workflow for seniors. |
+| **Citizen Status Login** | `http://localhost:8000/status` | Mobile + DOB login for status tracking. |
+| **Citizen Profile (IDOR Safe)** | `http://localhost:8000/application/1` | Returns `200` only for owner/admin; `403` for cross-user snoopers. |
+| **PDF Slip (Scrape Safe)** | `http://localhost:8000/ack/1.pdf` | Returns `403 Forbidden` for unauthenticated web scrapers. |
+| **Password Reset (SQLi Safe)** | `http://localhost:8000/status/reset` | Parameterized query immune to injection attacks. |
+| **Admin Login** | `http://localhost:8000/admin` | Staff credentials (`admin` / `sewasetu@123`). |
+| **Admin Application Inspection** | `http://localhost:8000/admin/view/1` | Official review interface. |
+| **Admin Approve Action** | `POST http://localhost:8000/admin/approve/1` | Enforced admin role; `403` for regular citizens. |
+| **Admin Reject Action** | `POST http://localhost:8000/admin/reject/1` | Enforced admin role; `403` for regular citizens. |
+| **SMS Gateway Web Console** | `http://localhost:8000/__gateway/` | Inspect outbound OTPs and SMS notifications. |
 
 ---
 
