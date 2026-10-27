@@ -66,11 +66,9 @@ def generate_acknowledgment_pdf(cur, app_id):
     pdf.cell(0, 8, "Old Age Pension Scheme - Acknowledgment", new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.ln(4)
 
-    # Decorative border
-    for i in range(0, 2000):
-        x = 10 + (i % 190)
-        pdf.line(x, 282, x + 0.5, 282)
-        pdf.line(x, 12, x + 0.5, 12)
+    # Clean vector border
+    pdf.line(10, 12, 200, 12)
+    pdf.line(10, 282, 200, 282)
 
     labels = [
         "Application No", "Applicant Name", "Mobile", "Date of Birth",

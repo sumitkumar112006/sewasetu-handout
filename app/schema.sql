@@ -35,3 +35,9 @@ CREATE TABLE IF NOT EXISTS otps (
     code       VARCHAR(6),
     created_at TIMESTAMP
 );
+
+-- Performance indexes to prevent pre-disbursement table scans and connection lockup
+CREATE INDEX IF NOT EXISTS idx_applications_mobile ON applications(mobile);
+CREATE INDEX IF NOT EXISTS idx_applications_status_submitted ON applications(status, submitted_at);
+CREATE INDEX IF NOT EXISTS idx_applications_status_block ON applications(status, block);
+
