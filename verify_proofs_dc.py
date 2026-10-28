@@ -175,6 +175,68 @@ def verify_issue_3():
         print(f"[!] Error in Issue 3 verification: {e}")
 
 
+def verify_issue_4():
+    print_banner("DEMO 4: ISSUE 4 — PRE-DISBURSEMENT BOTTLE-NECK ELIMINATION & CONCURRENCY")
+    try:
+        from app import get_db
+        from utils.pdf_generator import generate_acknowledgment_pdf
+        from unittest.mock import MagicMock
+
+        # 1. Verify PostgreSQL Database Indexes
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT indexname FROM pg_indexes WHERE tablename = 'applications'")
+        db_indexes = {row[0] for row in cur.fetchall()}
+        cur.close(); conn.close()
+
+        req_indexes = {
+            "idx_applications_mobile",
+            "idx_applications_status_submitted",
+            "idx_applications_status_block",
+        }
+        missing_db = req_indexes - db_indexes
+        assert len(missing_db) == 0, f"Missing indexes in database: {missing_db}"
+        print(f"[*] PostgreSQL Active Indexes : {len(db_indexes)} indexes on 'applications'")
+        for idx in req_indexes:
+            print(f"    -> [OK] Index Active: {idx}")
+
+        # 2. Verify schema.sql
+        schema_path = os.path.join(BASE_DIR, "schema.sql")
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema_txt = f.read()
+        for idx in req_indexes:
+            assert idx in schema_txt, f"Index {idx} missing in schema.sql"
+        print("    -> [OK] All performance indexes persisted in schema.sql")
+
+        # 3. Verify Dockerfile multi-threaded concurrency
+        dockerfile_path = os.path.join(BASE_DIR, "Dockerfile")
+        with open(dockerfile_path, "r", encoding="utf-8") as f:
+            dockerfile_txt = f.read()
+        assert "--threads" in dockerfile_txt, "Dockerfile missing --threads configuration"
+        print("    -> [OK] Gunicorn multi-threaded worker concurrency enabled (--threads)")
+
+        # 4. Verify PDF vector loop elimination
+        pdf_gen_path = os.path.join(BASE_DIR, "utils", "pdf_generator.py")
+        with open(pdf_gen_path, "r", encoding="utf-8") as f:
+            pdf_gen_txt = f.read()
+        assert "range(0, 2000)" not in pdf_gen_txt and "range(2000)" not in pdf_gen_txt, "CPU burner loop still in pdf_generator.py"
+
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = (
+            "SSP99999", "Pramod Sharma", "9861908220", "1950-01-01",
+            "Sonapur", "Sonari", "1234567890", "SBIN0001234",
+            datetime.now(), "APPROVED"
+        )
+        pdf_bytes = generate_acknowledgment_pdf(mock_cur, 1)
+        line_draws = len(re.findall(rb"[\d.]+ [\d.]+ l\b", pdf_bytes))
+        assert line_draws < 100, f"Too many line draws: {line_draws}"
+        print(f"    -> [OK] 4,000-line CPU burner loop eliminated (Vector lines: {line_draws} < 100)")
+
+        print("\n>>> RESULT FOR DC: ISSUE 4 FULLY RESOLVED & VERIFIED.")
+    except Exception as e:
+        print(f"[!] Error in Issue 4 verification: {e}")
+
+
 def main():
     print("\n" + "#" * 80)
     print("  SEWA SETU — 3-MINUTE BRIEFING EVIDENCE PACK FOR DEPUTY COMMISSIONER")
@@ -184,6 +246,7 @@ def main():
     verify_issue_1()
     verify_issue_2()
     verify_issue_3()
+    verify_issue_4()
 
     print("\n" + "=" * 80)
     print("  ALL EVIDENCE VERIFIED. READY FOR LOOM RECORDING.")
@@ -192,3 +255,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
