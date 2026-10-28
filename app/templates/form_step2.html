@@ -12,6 +12,9 @@
     <option {% if data.get('block')==b %}selected{% endif %}>{{ b }}</option>
     {% endfor %}
   </select>
-  <p><button class="btn" type="submit">Save &amp; Continue</button></p>
+  <p>
+    <a href="/form/1" class="btn-secondary">&laquo; Back</a>
+    <button class="btn" type="submit">Save &amp; Continue</button>
+  </p>
 </form>
 {% endblock %}

@@ -9,6 +9,9 @@
   <input type="text" name="ifsc" value="{{ data.get('ifsc','') }}">
   <p class="note">Pension will be credited by DBT to this account. Ensure the account
   is in the name of the applicant.</p>
-  <p><button class="btn" type="submit">Save &amp; Continue</button></p>
+  <p>
+    <a href="/form/2" class="btn-secondary">&laquo; Back</a>
+    <button class="btn" type="submit">Save &amp; Continue</button>
+  </p>
 </form>
 {% endblock %}

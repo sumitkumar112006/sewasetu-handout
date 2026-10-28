@@ -393,6 +393,12 @@ Elderly citizens making minor typos (e.g. misspelling a name or single digit err
    Accept `.pdf`, `.jpg`, `.jpeg` up to 5 MB with user-friendly error messages.
 6. **Cancellation UI**:
    Added interactive "Cancel Application" button in `app/templates/application.html` for `PENDING` applications.
+7. **Self-Serve Edit Route & UI (`/application/<id>/edit`)**:
+   Authenticated citizens can edit pending application details (Name, Village, Block, Bank Account, IFSC, DOB) directly from the portal without needing to cancel or contact the helpdesk. Acknowledgement PDFs are automatically regenerated upon saving changes.
+8. **Pre-Submission Review & Form Edit Navigation**:
+   Applicants can navigate back and forth across form steps (`form_step2`, `form_step3`, `upload`), and view a comprehensive review summary in `declaration.html` with direct `[Edit]` buttons for Personal, Address, Bank, and Document details before final submission.
+9. **Phone-Friendly Responsive Layout (Zero Styling/Color/Font Alterations)**:
+   Added `<meta name="viewport" content="width=device-width, initial-scale=1.0">`, global `box-sizing: border-box`, fluid container dimensions, horizontal table scroll wrappers (`.table-responsive`), full-width mobile form inputs, and 44px+ touch-friendly buttons while preserving the exact official Department of Social Welfare color palette (`#0b3d6e`, `#f7931e`, `#f0f2f5`) and font stack (`Arial,Helvetica,sans-serif`).
 
 ### 4. Verification & Proof of Resolution (TDD Evidence)
 - **Status**: **RESOLVED & VERIFIED**

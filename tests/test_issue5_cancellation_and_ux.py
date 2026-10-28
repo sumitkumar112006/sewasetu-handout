@@ -251,6 +251,101 @@ class TestIssue5CancellationAndUX(unittest.TestCase):
             "Expected helpful error message specifying PDF or JPG format"
         )
 
+    def test_self_serve_edit_of_pending_application(self):
+        """
+        An authenticated citizen can edit their pending application details
+        (e.g. correcting a bank account typo) directly from the UI.
+        """
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO applications
+               (application_no, applicant_name, mobile, dob, village, block, bank_account, ifsc, status, submitted_at)
+               VALUES ('TEST-EDIT-01', 'Arun Sarma', '9899334455', '1951-03-15', 'Sonapur', 'Sonari', '1111222233', 'SBIN0001', 'PENDING', %s)
+               RETURNING id""",
+            (datetime.now(),)
+        )
+        test_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        try:
+            with self.client.session_transaction() as sess:
+                sess["logged_in"] = True
+                sess["portal_mobile"] = "9899334455"
+
+            # 1. GET edit page
+            resp_get = self.client.get(f"/application/{test_id}/edit")
+            self.assertEqual(resp_get.status_code, 200)
+            self.assertIn(b"Edit Application Details", resp_get.data)
+            self.assertIn(b"1111222233", resp_get.data)
+
+            # 2. POST updated bank account & IFSC
+            with patch("app.generate_acknowledgment", return_value=b"%PDF-test"):
+                resp_post = self.client.post(
+                    f"/application/{test_id}/edit",
+                    data={
+                        "applicant_name": "Arun Sarma",
+                        "dob": "15/03/1951",
+                        "gender": "Male",
+                        "marital_status": "Married",
+                        "husband_name": "",
+                        "husband_employer": "",
+                        "village": "Sonapur",
+                        "block": "Sonari",
+                        "bank_account": "9999888877",  # Corrected bank account
+                        "ifsc": "SBIN0009999",         # Corrected IFSC
+                    },
+                    follow_redirects=True
+                )
+            self.assertEqual(resp_post.status_code, 200)
+            self.assertIn(b"Application details updated successfully", resp_post.data)
+
+            # Verify in DB
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT bank_account, ifsc FROM applications WHERE id = %s", (test_id,))
+            updated_row = cur.fetchone()
+            cur.close()
+            conn.close()
+
+            self.assertEqual(updated_row[0], "9999888877")
+            self.assertEqual(updated_row[1], "SBIN0009999")
+        finally:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("DELETE FROM applications WHERE application_no = 'TEST-EDIT-01'")
+            conn.commit()
+            cur.close()
+            conn.close()
+
+    def test_form_review_and_edit_options_in_declaration(self):
+        """
+        Declaration step and multi-step forms provide review and edit links for applicants.
+        """
+        with self.client.session_transaction() as sess:
+            sess["verified_mobile"] = "9899556677"
+            sess["form_data"] = {
+                "applicant_name": "Hemanta Deka",
+                "dob": "12/08/1953",
+                "gender": "Male",
+                "marital_status": "Married",
+                "village": "Sonapur",
+                "block": "Sonari",
+                "bank_account": "4455667788",
+                "ifsc": "SBIN0001234",
+            }
+            sess["doc_path"] = "/tmp/dummy.pdf"
+
+        resp = self.client.get("/declaration")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Review Application &amp; Declaration", resp.data)
+        self.assertIn(b"Hemanta Deka", resp.data)
+        self.assertIn(b"/form/1", resp.data)
+        self.assertIn(b"/form/2", resp.data)
+        self.assertIn(b"/form/3", resp.data)
+
 
 if __name__ == "__main__":
     unittest.main()

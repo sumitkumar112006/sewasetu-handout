@@ -2,6 +2,7 @@
 {% block content %}
 <h2>Applications &mdash; {{ status }}</h2>
 <p><a href="/admin/dashboard">&laquo; Dashboard</a></p>
+<div class="table-responsive">
 <table class="tbl">
 <tr><th>ID</th><th>Application No</th><th>Name</th><th>Mobile</th><th>Block</th>
 <th>Status</th><th>Submitted</th><th></th></tr>
@@ -13,6 +14,7 @@
 </tr>
 {% endfor %}
 </table>
+</div>
 <p>
 {% if page > 1 %}<a href="?status={{ status }}&page={{ page - 1 }}">&laquo; Previous</a>{% endif %}
 &nbsp;<a href="?status={{ status }}&page={{ page + 1 }}">Next &raquo;</a>

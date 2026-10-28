@@ -18,6 +18,7 @@ services:
       - db
       - smsgw
     volumes:
+      - ./app:/app
       - uploads:/var/sewasetu/uploads
       - applogs:/var/log/sewasetu
 

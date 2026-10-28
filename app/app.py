@@ -9,6 +9,7 @@ Maintenance contract ended 31/01/2026.
 
 import os
 import io
+import re
 import csv
 import random
 import hashlib
@@ -198,10 +199,11 @@ def form_step(step):
     if step not in (1, 2, 3):
         abort(404)
     if request.method == "POST":
-        data = session.get("form_data", {})
+        data = dict(session.get("form_data", {}))
         for k, v in request.form.items():
-            data[k] = v
+            data[k] = v.strip() if isinstance(v, str) else v
         session["form_data"] = data
+        session.modified = True
         if step < 3:
             return redirect(url_for("form_step", step=step + 1))
         return redirect(url_for("upload"))
@@ -217,24 +219,27 @@ def upload():
     if request.method == "POST":
         f = request.files.get("document")
         if f is None or f.filename == "":
+            if session.get("doc_path"):
+                return redirect(url_for("declaration"))
             flash("Please select a document to upload.")
-            return render_template("upload.html")
+            return render_template("upload.html", doc_path=session.get("doc_path"))
         filename = f.filename.lower()
         content = f.read()
         allowed = (".pdf", ".jpg", ".jpeg")
         if not any(filename.endswith(ext) for ext in allowed):
             flash("Please upload your document in PDF or JPG format.")
-            return render_template("upload.html")
+            return render_template("upload.html", doc_path=session.get("doc_path"))
         if len(content) > 5 * 1024 * 1024:
             flash("Uploaded document must be under 5 MB in size.")
-            return render_template("upload.html")
+            return render_template("upload.html", doc_path=session.get("doc_path"))
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         path = os.path.join(UPLOAD_DIR, "%s_%s" % (session["verified_mobile"], filename))
         with open(path, "wb") as out:
             out.write(content)
         session["doc_path"] = path
+        session.modified = True
         return redirect(url_for("declaration"))
-    return render_template("upload.html")
+    return render_template("upload.html", doc_path=session.get("doc_path"))
 
 
 @app.route("/declaration", methods=["GET", "POST"])
@@ -244,7 +249,7 @@ def declaration():
         return redirect(url_for("apply"))
     if request.method == "POST":
         return handle_submission()
-    return render_template("declaration.html")
+    return render_template("declaration.html", data=session.get("form_data", {}), doc_path=session.get("doc_path", ""))
 
 
 def handle_submission():
@@ -262,11 +267,23 @@ def handle_submission():
     husband_employer = sanitize(data.get("husband_employer", ""))
     bank_account = data.get("bank_account", "").strip()
     ifsc = data.get("ifsc", "").strip().upper()
-    dob_raw = data.get("dob", "").strip()
+    dob_raw = re.sub(r'\s+', '', data.get("dob", "")).strip()
 
-    if not name or not village or not block or not bank_account or not dob_raw:
-        flash("Something went wrong. Please try again.")
+    if not name or not dob_raw:
+        flash("Please complete your Personal Details (Full Name and Date of Birth).")
         return redirect(url_for("form_step", step=1))
+
+    if not village or not block:
+        flash("Please complete your Address Details (Village and Block).")
+        return redirect(url_for("form_step", step=2))
+
+    if not bank_account or not ifsc:
+        flash("Please complete your Bank Details (Account Number and IFSC Code).")
+        return redirect(url_for("form_step", step=3))
+
+    if not doc_path:
+        flash("Please upload an age proof document (JPG or PDF up to 5 MB).")
+        return redirect(url_for("upload"))
 
     if marital == "Widowed":
         # Widows should not be blocked by requiring deceased husband's employer
@@ -277,20 +294,20 @@ def handle_submission():
     # lenient date parsing to reduce rejections (CR-2024-117)
     # Prioritize Indian standard format (%d/%m/%Y) first before US format (%m/%d/%Y)
     dob = None
-    for fmt in ("%d/%m/%Y", "%m/%d/%Y"):
+    for fmt in ("%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y", "%Y-%m-%d"):
         try:
             dob = datetime.strptime(dob_raw, fmt).date()
             break
         except ValueError:
             continue
     if dob is None:
-        flash("Something went wrong. Please try again.")
+        flash("Invalid Date of Birth format '%s'. Please enter in DD/MM/YYYY format (e.g. 15/08/1950)." % dob_raw)
         return redirect(url_for("form_step", step=1))
 
     today = date.today()
     age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
     if age < MIN_AGE:
-        flash("Applicant must be above %d years of age to be eligible." % MIN_AGE)
+        flash("Applicant must be above %d years of age to be eligible for Old Age Pension (calculated age from DOB is %d years; born after 1966)." % (MIN_AGE, age))
         return redirect(url_for("form_step", step=1))
 
     if datetime.now() > SCHEME_DEADLINE:
@@ -456,7 +473,6 @@ def cancel_application(app_id):
         cur.close(); conn.close()
         flash("Only pending applications can be cancelled.")
         return redirect(url_for("view_application", app_id=app_id))
-
     cur.execute(
         "UPDATE applications SET status = 'CANCELLED', decided_at = %s, decided_by = %s WHERE id = %s",
         (datetime.now(), "ADMIN" if is_admin else "APPLICANT", app_id)
@@ -465,6 +481,115 @@ def cancel_application(app_id):
     cur.close(); conn.close()
     flash("Application %s has been cancelled successfully. You may now submit a new application if needed." % row[1])
     return redirect(url_for("view_application", app_id=app_id))
+
+
+@app.route("/application/<int:app_id>/edit", methods=["GET", "POST"])
+def edit_application(app_id):
+    if not session.get("logged_in") and not session.get("admin"):
+        flash("Please login to manage your application.")
+        return redirect(url_for("status_login"))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id, application_no, applicant_name, mobile, dob, gender, marital_status, "
+        "husband_name, husband_employer, village, block, bank_account, ifsc, status "
+        "FROM applications WHERE id = %s", (app_id,)
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        abort(404)
+
+    is_admin = bool(session.get("admin"))
+    user_mobile = session.get("portal_mobile")
+    if not is_admin and user_mobile != row[3]:
+        cur.close(); conn.close()
+        abort(403)
+
+    if row[13] != "PENDING":
+        cur.close(); conn.close()
+        flash("Only pending applications can be edited.")
+        return redirect(url_for("view_application", app_id=app_id))
+
+    if request.method == "POST":
+        name = sanitize(request.form.get("applicant_name", ""))
+        dob_raw = re.sub(r'\s+', '', request.form.get("dob", "")).strip()
+        gender = request.form.get("gender", "")
+        marital = request.form.get("marital_status", "")
+        husband_name = sanitize(request.form.get("husband_name", ""))
+        husband_employer = sanitize(request.form.get("husband_employer", ""))
+        village = sanitize(request.form.get("village", ""))
+        block = sanitize(request.form.get("block", ""), maxlen=50)
+        bank_account = request.form.get("bank_account", "").strip()
+        ifsc = request.form.get("ifsc", "").strip().upper()
+
+        if not name or not village or not block or not bank_account or not dob_raw:
+            flash("Please fill in all mandatory fields.")
+            cur.close(); conn.close()
+            return redirect(url_for("edit_application", app_id=app_id))
+
+        dob = None
+        for fmt in ("%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                dob = datetime.strptime(dob_raw, fmt).date()
+                break
+            except ValueError:
+                continue
+        if dob is None:
+            flash("Invalid date format. Please use DD/MM/YYYY.")
+            cur.close(); conn.close()
+            return redirect(url_for("edit_application", app_id=app_id))
+
+        today = date.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        if age < MIN_AGE:
+            flash("Applicant must be above %d years of age to be eligible." % MIN_AGE)
+            cur.close(); conn.close()
+            return redirect(url_for("edit_application", app_id=app_id))
+
+        cur.execute(
+            """UPDATE applications SET applicant_name = %s, dob = %s, gender = %s,
+               marital_status = %s, husband_name = %s, husband_employer = %s,
+               village = %s, block = %s, bank_account = %s, ifsc = %s
+               WHERE id = %s""",
+            (name, dob, gender, marital, husband_name, husband_employer,
+             village, block, bank_account, ifsc, app_id)
+        )
+        portal_pass = dob.strftime("%d%m%Y")
+        cur.execute("UPDATE portal_users SET password_hash = %s WHERE mobile = %s",
+                    (hash_password(portal_pass), row[3]))
+        conn.commit()
+
+        try:
+            pdf_bytes = generate_acknowledgment(cur, app_id)
+            ack_path = os.path.join(UPLOAD_DIR, "ack", "%d.pdf" % app_id)
+            with open(ack_path, "wb") as out:
+                out.write(pdf_bytes)
+        except Exception as pdf_err:
+            app.logger.warning("Could not regenerate ack PDF for app_id=%d: %s" % (app_id, str(pdf_err)))
+
+        cur.close(); conn.close()
+        flash("Application details updated successfully.")
+        return redirect(url_for("view_application", app_id=app_id))
+
+    dob_str = row[4].strftime("%d/%m/%Y") if row[4] else ""
+    app_data = {
+        "id": row[0],
+        "application_no": row[1],
+        "applicant_name": row[2],
+        "mobile": row[3],
+        "dob": dob_str,
+        "gender": row[5],
+        "marital_status": row[6],
+        "husband_name": row[7] or "",
+        "husband_employer": row[8] or "",
+        "village": row[9],
+        "block": row[10],
+        "bank_account": row[11],
+        "ifsc": row[12]
+    }
+    cur.close(); conn.close()
+    return render_template("edit_application.html", app=app_data, blocks=BLOCKS)
 
 
 @app.route("/ack/<int:app_id>.pdf")

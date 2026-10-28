@@ -1,12 +1,62 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="steps"><b>Step 6 of 6:</b> Declaration</div>
-<h2>Declaration</h2>
+<div class="steps"><b>Step 6 of 6:</b> Review &amp; Declaration</div>
+<h2>Review Application &amp; Declaration</h2>
+
+<table class="tbl" style="max-width: 680px; margin-bottom: 20px;">
+  <tr>
+    <th style="width: 180px;">Personal Details</th>
+    <td>
+      <strong>Name:</strong> {{ data.get('applicant_name', '-') }}<br>
+      <strong>Date of Birth:</strong> {{ data.get('dob', '-') }}<br>
+      <strong>Gender:</strong> {{ data.get('gender', '-') }}<br>
+      <strong>Marital Status:</strong> {{ data.get('marital_status', '-') }}
+      {% if data.get('husband_name') %}<br><strong>Husband's Name:</strong> {{ data.get('husband_name') }}{% endif %}
+      {% if data.get('husband_employer') %}<br><strong>Husband's Employer:</strong> {{ data.get('husband_employer') }}{% endif %}
+    </td>
+    <td style="width: 70px; text-align: center; vertical-align: middle;">
+      <a href="/form/1" class="btn" style="padding: 5px 12px; font-size: 13px;">Edit</a>
+    </td>
+  </tr>
+  <tr>
+    <th>Address Details</th>
+    <td>
+      <strong>Village:</strong> {{ data.get('village', '-') }}<br>
+      <strong>Block:</strong> {{ data.get('block', '-') }}
+    </td>
+    <td style="text-align: center; vertical-align: middle;">
+      <a href="/form/2" class="btn" style="padding: 5px 12px; font-size: 13px;">Edit</a>
+    </td>
+  </tr>
+  <tr>
+    <th>Bank Details</th>
+    <td>
+      <strong>Account Number:</strong> {{ data.get('bank_account', '-') }}<br>
+      <strong>IFSC Code:</strong> {{ data.get('ifsc', '-') }}
+    </td>
+    <td style="text-align: center; vertical-align: middle;">
+      <a href="/form/3" class="btn" style="padding: 5px 12px; font-size: 13px;">Edit</a>
+    </td>
+  </tr>
+  <tr>
+    <th>Age Proof Document</th>
+    <td>
+      <strong>Status:</strong> {% if doc_path %}Document Attached{% else %}Pending Upload{% endif %}
+    </td>
+    <td style="text-align: center; vertical-align: middle;">
+      <a href="/upload" class="btn" style="padding: 5px 12px; font-size: 13px;">Edit</a>
+    </td>
+  </tr>
+</table>
+
 <p>I hereby declare that the information furnished above is true to the best of my
 knowledge and belief. I understand that furnishing false information is punishable
 under applicable law and will result in cancellation of pension.</p>
 <form method="post">
   <p><input type="checkbox" required> I agree to the above declaration.</p>
-  <p><button class="btn" type="submit">Submit Application</button></p>
+  <p>
+    <a href="/upload" class="btn-secondary">&laquo; Back</a>
+    <button class="btn" type="submit">Submit Application</button>
+  </p>
 </form>
 {% endblock %}
