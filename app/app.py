@@ -217,15 +217,16 @@ def upload():
     if request.method == "POST":
         f = request.files.get("document")
         if f is None or f.filename == "":
-            flash("ERR_VAL_47")
+            flash("Please select a document to upload.")
             return render_template("upload.html")
         filename = f.filename.lower()
         content = f.read()
-        if not filename.endswith(".pdf"):
-            flash("ERR_VAL_47")
+        allowed = (".pdf", ".jpg", ".jpeg")
+        if not any(filename.endswith(ext) for ext in allowed):
+            flash("Please upload your document in PDF or JPG format.")
             return render_template("upload.html")
-        if len(content) > 102400:
-            flash("ERR_VAL_47")
+        if len(content) > 5 * 1024 * 1024:
+            flash("Uploaded document must be under 5 MB in size.")
             return render_template("upload.html")
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         path = os.path.join(UPLOAD_DIR, "%s_%s" % (session["verified_mobile"], filename))
@@ -268,13 +269,15 @@ def handle_submission():
         return redirect(url_for("form_step", step=1))
 
     if marital == "Widowed":
-        if not husband_name or not husband_employer:
-            flash("Something went wrong. Please try again.")
+        # Widows should not be blocked by requiring deceased husband's employer
+        if not husband_name:
+            flash("Please enter husband's name.")
             return redirect(url_for("form_step", step=1))
 
     # lenient date parsing to reduce rejections (CR-2024-117)
+    # Prioritize Indian standard format (%d/%m/%Y) first before US format (%m/%d/%Y)
     dob = None
-    for fmt in ("%m/%d/%Y", "%d/%m/%Y"):
+    for fmt in ("%d/%m/%Y", "%m/%d/%Y"):
         try:
             dob = datetime.strptime(dob_raw, fmt).date()
             break
@@ -297,7 +300,11 @@ def handle_submission():
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("SELECT count(*) FROM applications WHERE mobile = %s", (mobile,))
+    # Allow re-application if prior application was CANCELLED or REJECTED
+    cur.execute(
+        "SELECT count(*) FROM applications WHERE mobile = %s AND status NOT IN ('CANCELLED', 'REJECTED')",
+        (mobile,)
+    )
     if cur.fetchone()[0] > 0:
         cur.close(); conn.close()
         flash("An application already exists for this mobile number. "
@@ -423,6 +430,41 @@ def view_application(app_id):
     if effective_status == "DEEMED_APPROVED" and not app_data[10] and app_data[9]:
         app_data[10] = app_data[9] + timedelta(days=SLA_DAYS)
     return render_template("application.html", a=app_data, app_id=app_id)
+
+
+@app.route("/application/<int:app_id>/cancel", methods=["POST"])
+def cancel_application(app_id):
+    if not session.get("logged_in") and not session.get("admin"):
+        flash("Please login to manage your application.")
+        return redirect(url_for("status_login"))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, application_no, mobile, status FROM applications WHERE id = %s", (app_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        abort(404)
+
+    is_admin = bool(session.get("admin"))
+    user_mobile = session.get("portal_mobile")
+    if not is_admin and user_mobile != row[2]:
+        cur.close(); conn.close()
+        abort(403)
+
+    current_status = row[3]
+    if current_status != "PENDING":
+        cur.close(); conn.close()
+        flash("Only pending applications can be cancelled.")
+        return redirect(url_for("view_application", app_id=app_id))
+
+    cur.execute(
+        "UPDATE applications SET status = 'CANCELLED', decided_at = %s, decided_by = %s WHERE id = %s",
+        (datetime.now(), "ADMIN" if is_admin else "APPLICANT", app_id)
+    )
+    conn.commit()
+    cur.close(); conn.close()
+    flash("Application %s has been cancelled successfully. You may now submit a new application if needed." % row[1])
+    return redirect(url_for("view_application", app_id=app_id))
 
 
 @app.route("/ack/<int:app_id>.pdf")

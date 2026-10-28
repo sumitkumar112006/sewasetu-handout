@@ -15,4 +15,13 @@
   <tr><th>Decided</th><td>{{ a[10] or '-' }}</td></tr>
 </table>
 <p><a href="/ack/{{ app_id }}.pdf">Download Acknowledgment (PDF)</a></p>
+
+{% if a[8] == 'PENDING' %}
+<div style="margin-top: 1.5rem; padding: 1rem; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 4px; max-width:640px">
+  <p style="margin: 0 0 0.75rem 0;"><b>Need to make corrections?</b> If you entered incorrect bank details or personal information, you can cancel this application and re-apply immediately.</p>
+  <form method="post" action="{{ url_for('cancel_application', app_id=app_id) }}" onsubmit="return confirm('Are you sure you want to cancel this application?');">
+    <button type="submit" class="btn" style="background: #dc3545; color: white;">Cancel Application</button>
+  </form>
+</div>
+{% endif %}
 {% endblock %}
